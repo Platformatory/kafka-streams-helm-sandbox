@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: word-count
+spec:
+  selector:
+    matchLabels:
+      app: kafka-streams-jmx
+  serviceName: kafka-streams-jmx
+  replicas: 1
+  minReadySeconds: 10
+  template:
+    metadata:
+      labels:
+        app: kafka-streams-jmx
+    spec:
+      terminationGracePeriodSeconds: 10
+      initContainers:
+      - name: prometheus-jmx-exporter
+        image: avinashupadhya99/prometheus-jmx-exporter-kubernetes:1.0.0
+        volumeMounts:
+        - mountPath: /etc/jmx
+          name: jmx-volume
+      {{- if .Values.streams.build }}
+      - name: build-push-image
+        image: gcr.io/kaniko-project/executor@sha256:216e62d58633135cca0d36a5d16b5faebaf98fe87b8d1c11cc84aa558f123b0a
+        env:
+        - name: IFS
+          value: ''
+        args:
+          - "--build-arg=JAR_URL={{ .Values.streams.build.jar_url }}"
+          - "--build-arg=JAVA_CLASSPATH={{ .Values.streams.build.java_classpath }}"
+          - "--build-arg=JAR_ARGS={{ default "" .Values.streams.build.jar_args }}"
+          - "--dockerfile=Dockerfile"
+          - "--context=dir:///workspace"
+          - "--destination={{ .Values.streams.build.destination }}"
+        volumeMounts:
+          - name: kaniko-secret
+            mountPath: /kaniko/.docker/config.json
+            subPath: config.json
+            readOnly: true
+          - name: dockerfile
+            mountPath: /workspace
+      {{- end }}
+      containers:
+      - name: kafka-streams
+        image: {{ if .Values.streams.build }}{{.Values.streams.build.destination}}{{ else }}{{ required "Either .Values.streams.image or .Values.streams.build.destination needs to be set" .Values.streams.image}}{{ end }}
+        ports:
+        - containerPort: 7071
+          name: jmx
+        env:
+        - name: _JAVA_OPTIONS
+          value: "-javaagent:/etc/jmx/jmx_prometheus_javaagent.jar=7071:/etc/jmx/config/jmx-kafka-streams-app-prometheus.yml"
+{{ toYaml .Values.streams.env | indent 8 }}
+        volumeMounts:
+        {{- if .Values.streams.configProperties }}
+        - name: streams-config
+          mountPath: {{ .Values.streams.configProperties.path }}
+        {{- end }}
+        - name: jmx-config
+          mountPath: /etc/jmx/config
+        - name: jmx-volume
+          mountPath: /etc/jmx
+        {{- if .Values.streams.statefulData.enabled }}
+        - name: streams-data
+          mountPath: {{ .Values.streams.statefulData.path }}
+        {{- end }}
+      volumes:
+      {{- if .Values.streams.configProperties }}
+      - name: streams-config
+        configMap:
+          name: kafka-streams-properties
+      {{- end }}
+      - name: jmx-config
+        configMap:
+          name: jmx-configmap
+      - name: jmx-volume
+        emptyDir: {}
+      {{- if .Values.streams.build }}
+      - name: kaniko-secret
+        secret:
+          secretName: regcred
+          items:
+          - key: .dockerconfigjson
+            path: config.json
+      - name: dockerfile
+        configMap:
+          name: dockerfile-configmap
+      {{- end }}
+  {{- if .Values.streams.statefulData.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: streams-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ default "1Gi" .Values.streams.statefulData.storage }}
+  {{- end }}

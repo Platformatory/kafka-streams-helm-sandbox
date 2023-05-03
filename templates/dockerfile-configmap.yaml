@@ -1,0 +1,23 @@
+{{- if .Values.streams.build -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dockerfile-configmap
+data:
+  Dockerfile: |
+    FROM openjdk:19-jdk
+
+    WORKDIR /app
+
+    ARG JAR_URL
+    ARG JAVA_CLASSPATH
+    ARG JAR_ARGS
+
+    ENV STREAMS_CLASSPATH=${JAVA_CLASSPATH}
+    ENV STREAMS_ARGS=${JAR_ARGS}
+
+    RUN curl -o kafka-streams.jar $JAR_URL
+
+    CMD ["sh", "-c", "java -cp kafka-streams.jar ${STREAMS_CLASSPATH} ${STREAMS_ARGS}"]
+
+{{- end }}

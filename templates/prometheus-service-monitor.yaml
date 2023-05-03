@@ -1,0 +1,12 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-streams-jmx
+  labels:
+    app: kafka-streams-jmx
+spec:
+  selector:
+    matchLabels:
+      app: kafka-streams-jmx
+  endpoints:
+  - port: jmx

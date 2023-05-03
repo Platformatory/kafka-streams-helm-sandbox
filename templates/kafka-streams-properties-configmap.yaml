@@ -1,0 +1,10 @@
+{{- if .Values.streams.configProperties -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: kafka-streams-properties
+data:
+  {{ .Values.streams.configProperties.filename }}: |-
+{{ .Values.streams.configProperties.properties | indent 4 }}
+
+{{- end }}
